@@ -1,3 +1,3 @@
-# Catch A Seal
-A small silly catcher game where you need to catch the seals and avoid the evil orcas that eat them !
-(Game still under developement)
+Bartendit
+A small silly catcher game where you need to catch fire partciles in order to get enough money to buy potions and try out your own cocktails
+
