@@ -53,8 +53,8 @@ SpriteRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 0
   m_RayTraceProcedural: 0
-  m_RayTracedAccelStructBuildFlagsOverride: 0
-  m_RayTracedAccelStructBuildFlags: 1
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
@@ -84,7 +84,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 1
   m_MaskInteraction: 0
-  m_Sprite: {fileID: 21300000, guid: 7c1f0b6d9a3e4d2c8f5b1a0e6d3c9b47, type: 3}
+  m_Sprite: {fileID: -7327779178411211184, guid: 6d1b1135c992cd741967152c64820f94, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -109,6 +109,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::FallingObject
   itemType: 2
   fallSpeed: 6
+  despawnY: -10
 --- !u!58 &7300000000000000104
 CircleCollider2D:
   m_ObjectHideFlags: 0

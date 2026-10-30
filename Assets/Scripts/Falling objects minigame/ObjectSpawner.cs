@@ -28,6 +28,10 @@ public class ObjectSpawner : MonoBehaviour
     [SerializeField] private float maxX = 8f;  // Right boundary outside camera view
     [SerializeField] private float spawnY = 6f; // Spawn height above screen top
 
+    [Header("Despawn")]
+    [Tooltip("Y position below which a missed item is considered gone (below the gloves).")]
+    [SerializeField] private float despawnY = -7f;
+
     private float timer;
     private float nextSpawnDelay;
 
@@ -60,17 +64,18 @@ public class ObjectSpawner : MonoBehaviour
         // Roll coins first so their rarity is independent of the good/bad split
         if (coinPrefabs != null && coinPrefabs.Length > 0 && Random.value < coinChance)
         {
-            SpawnFromPool(coinPrefabs);
+            SpawnFromPool(coinPrefabs, FallingObject.ObjectType.Coin);
             return;
         }
 
         // Roll for the type - every spawn is independent, never a fixed pair
         bool spawnGood = Random.value < goodItemChance;
 
-        SpawnFromPool(spawnGood ? goodItemPrefabs : badItemPrefabs);
+        SpawnFromPool(spawnGood ? goodItemPrefabs : badItemPrefabs,
+                      spawnGood ? FallingObject.ObjectType.Good : FallingObject.ObjectType.Bad);
     }
 
-    private void SpawnFromPool(GameObject[] pool)
+    private void SpawnFromPool(GameObject[] pool, FallingObject.ObjectType type)
     {
         // Fall back to the other array if this one is empty
         if (pool == null || pool.Length == 0)
@@ -82,7 +87,38 @@ public class ObjectSpawner : MonoBehaviour
         if (prefabToSpawn == null) return;
 
         float randomX = Random.Range(minX, maxX);
-        Instantiate(prefabToSpawn, new Vector3(randomX, spawnY, 0f), Quaternion.identity);
+        GameObject spawned = Instantiate(prefabToSpawn,
+                                         new Vector3(randomX, spawnY, 0f),
+                                         Quaternion.identity);
+
+        // Make sure it has a FallingObject so the event managers can read itemType.
+        FallingObject fallingObject = spawned.GetComponent<FallingObject>();
+        if (fallingObject == null)
+        {
+            fallingObject = spawned.AddComponent<FallingObject>();
+        }
+        fallingObject.itemType = type;
+
+        // Ensure a Collider2D exists so trigger/collision callbacks can fire.
+        if (spawned.GetComponent<Collider2D>() == null)
+        {
+            spawned.AddComponent<BoxCollider2D>();
+        }
+
+        // Ensure a Rigidbody2D exists — required for 2D physics callbacks when
+        // the gloves collider is static (no Rigidbody2D of its own).
+        Rigidbody2D rb = spawned.GetComponent<Rigidbody2D>();
+        if (rb == null)
+        {
+            rb = spawned.AddComponent<Rigidbody2D>();
+        }
+        rb.bodyType = RigidbodyType2D.Kinematic;
+        rb.gravityScale = 0f;
+        rb.simulated = true;
+
+        // Attach the lightweight handler that fires the events + destroys the object.
+        SpawnedItemHandler handler = spawned.AddComponent<SpawnedItemHandler>();
+        handler.Init(fallingObject, despawnY, type);
     }
 
     private GameObject GetRandomPrefab(GameObject[] prefabArray)
@@ -90,5 +126,109 @@ public class ObjectSpawner : MonoBehaviour
         if (prefabArray == null || prefabArray.Length == 0) return null;
         int randomIndex = Random.Range(0, prefabArray.Length);
         return prefabArray[randomIndex];
+    }
+}
+
+// ======================================================================
+// Added at runtime to every spawned object. Handles BOTH trigger and
+// collision callbacks so it works regardless of how the gloves collider
+// is configured. Fires GameEventManager events and destroys itself.
+//
+// Key fixes over the previous version:
+//   - Stores the type locally and re-applies it to the FallingObject right
+//     before invoking, guaranteeing the listener sees the correct enum.
+//   - Invokes are wrapped so a throwing listener cannot prevent Destroy.
+// ======================================================================
+[RequireComponent(typeof(Collider2D))]
+public class SpawnedItemHandler : MonoBehaviour
+{
+    private FallingObject fallingObject;
+    private FallingObject.ObjectType itemType;
+    private float despawnY;
+    private bool resolved;
+
+    public void Init(FallingObject item, float despawn, FallingObject.ObjectType type)
+    {
+        fallingObject = item;
+        itemType = type;
+        despawnY = despawn;
+
+        // Apply immediately, and keep applying — protects against any prefab
+        // script that overwrites itemType in its own Awake/Start.
+        ApplyType();
+    }
+
+    private void Start()
+    {
+        // Late safety net: one frame later, ensure the type is still correct.
+        ApplyType();
+    }
+
+    private void ApplyType()
+    {
+        if (fallingObject != null)
+        {
+            fallingObject.itemType = itemType;
+        }
+    }
+
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        TryResolveHit(other);
+    }
+
+    private void OnCollisionEnter2D(Collision2D collision)
+    {
+        TryResolveHit(collision.collider);
+    }
+
+    private void TryResolveHit(Component other)
+    {
+        if (resolved) return;
+        if (other == null) return;
+        if (!other.CompareTag("Gloves")) return;
+
+        resolved = true;
+
+        // Guarantee the listener sees the right type, even if something
+        // reset it between Init and now.
+        ApplyType();
+
+        // Raise the event. Wrap in try/catch so an exception in any listener
+        // cannot skip Destroy(gameObject) below.
+        try
+        {
+            GameEventManager.TriggerItemCaught(fallingObject);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[SpawnedItemHandler] Listener threw during TriggerItemCaught: {e}");
+        }
+
+        Destroy(gameObject);
+    }
+
+    private void Update()
+    {
+        if (resolved) return;
+
+        if (transform.position.y < despawnY)
+        {
+            resolved = true;
+
+            if (itemType == FallingObject.ObjectType.Good)
+            {
+                try
+                {
+                    GameEventManager.TriggerGoodItemMissed(fallingObject);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"[SpawnedItemHandler] Listener threw during TriggerGoodItemMissed: {e}");
+                }
+            }
+
+            Destroy(gameObject);
+        }
     }
 }
